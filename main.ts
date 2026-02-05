@@ -37,9 +37,21 @@ const dadJokes = [
 ];
 
 // Dad joke paywall price
-const DAD_JOKE_PRICE = 299; // $2.99 for lifetime access to premium dad jokes!
+const DAD_JOKE_PRICE = 299;
 
-// Create Stripe checkout session for a user
+function getRandomJoke(): string {
+  return dadJokes[Math.floor(Math.random() * dadJokes.length)];
+}
+
+async function sendPaymentLink(to: string, from: string): Promise<void> {
+  const url = await createCheckoutSession(to);
+  await twilioClient.messages.create({
+    contentSid: "HXa9f820df155dad36b03a757e97137e64",
+    contentVariables: JSON.stringify({ 1: url.replace("https://checkout.stripe.com/c/pay/", "") }),
+    from,
+    to,
+  });
+}
 async function createCheckoutSession(customerPhone: string): Promise<string> {
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
@@ -67,7 +79,6 @@ async function createCheckoutSession(customerPhone: string): Promise<string> {
   return session.url || "";
 }
 
-// Twilio messaging endpoint
 async function handleTwilioMessage(req: Request): Promise<Response> {
   const formData = await req.formData();
   const from = formData.get("From")?.toString() || "";
@@ -76,138 +87,65 @@ async function handleTwilioMessage(req: Request): Promise<Response> {
 
   console.log(`Received message from ${from}: ${body}`);
 
-  const MessagingResponse = twilio.twiml.MessagingResponse;
-  const twimlResponse = new MessagingResponse();
+  const twiml = new twilio.twiml.MessagingResponse();
 
-  // Check if message is "help" or "hello" or "start"
   if (body === "get more jokes") {
-    // This means the user clicked the button, no action needed
-  } else if (body === "help" || body === "hello" || body === "start") {
-    twimlResponse.message(
+    // Button click, no action
+  } else if (["help", "hello", "start"].includes(body)) {
+    twiml.message(
       `👋 Welcome to the ULTIMATE Dad Joke Generator! 🎉\n\n` +
-        `For just $${
-          (DAD_JOKE_PRICE / 100).toFixed(2)
-        }, you'll unlock LIFETIME access to the corniest, ` +
-        `most groan-worthy dad jokes on the planet! 🌎\n\n` +
-        `Why pay? Because FREE dad jokes are like free hugs from strangers... ` +
-        `slightly uncomfortable and probably not worth it. 😅\n\n` +
-        `Reply with ANY message to get started!`,
+      `For just $${(DAD_JOKE_PRICE / 100).toFixed(2)}, you'll unlock LIFETIME access to the corniest, ` +
+      `most groan-worthy dad jokes on the planet! 🌎\n\n` +
+      `Why pay? Because FREE dad jokes are like free hugs from strangers... ` +
+      `slightly uncomfortable and probably not worth it. 😅\n\n` +
+      `Reply with ANY message to get started!`
     );
+  } else if (paidUsers.has(from)) {
+    twiml.message(`🎭 HERE'S YOUR PREMIUM DAD JOKE:\n\n${getRandomJoke()}\n\n😂 Want another? Just text me again!`);
   } else {
-    // Check if user has paid
-    if (paidUsers.has(from)) {
-      // User has paid, send random dad joke
-      const randomJoke = dadJokes[Math.floor(Math.random() * dadJokes.length)];
-      twimlResponse.message(
-        `🎭 HERE'S YOUR PREMIUM DAD JOKE:\n\n${randomJoke}\n\n😂 Want another? Just text me again!`,
-      );
-    } else {
-      // User hasn't paid, send payment reminder disguised as a dad joke
-      try {
-        const checkoutUrl = await createCheckoutSession(from);
-
-        // Extract the checkout session suffix from the full URL
-        // URL format: https://checkout.stripe.com/c/pay/{suffix}
-        const urlSuffix = checkoutUrl.replace(
-          "https://checkout.stripe.com/c/pay/",
-          "",
-        );
-
-        // Send content template message using Twilio client
-        await twilioClient.messages.create({
-          contentSid: "HXa9f820df155dad36b03a757e97137e64",
-          contentVariables: JSON.stringify({ 1: urlSuffix }),
-          from: to,
-          to: from,
-        });
-      } catch (error) {
-        console.error("Error creating checkout session:", error);
-        twimlResponse.message(
-          "🤖 Error: Even robots need to eat... I mean, process payments! Try again later.",
-        );
-      }
+    try {
+      await sendPaymentLink(from, to);
+    } catch (error) {
+      console.error("Error creating checkout:", error);
+      twiml.message("🤖 Error: Even robots need to eat... I mean, process payments! Try again later.");
     }
   }
 
-  return new Response(twimlResponse.toString(), {
-    headers: {
-      "Content-Type": "text/xml",
-    },
-  });
+  return new Response(twiml.toString(), { headers: { "Content-Type": "text/xml" } });
 }
 
-// Handle payment success page
 async function handlePaymentSuccess(req: Request, url: URL): Promise<Response> {
   const sessionId = url.searchParams.get("session_id");
-
-  if (!sessionId) {
-    return new Response("Missing session_id", { status: 400 });
-  }
+  if (!sessionId) return new Response("Missing session_id", { status: 400 });
 
   try {
-    // Retrieve session details from Stripe
     const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const phone = session.metadata?.phone;
+    const amount = session.amount_total ? (session.amount_total / 100).toFixed(2) : "0.00";
 
-    // Extract payment information
-    const email = session.customer_details?.email || "N/A";
-    const amountTotal = session.amount_total
-      ? (session.amount_total / 100).toFixed(2)
-      : "0.00";
-    const currency = session.currency?.toUpperCase() || "USD";
-    const paymentStatus = session.payment_status;
-    const customerPhone = session.metadata?.phone || "N/A";
+    console.log(`✅ Payment: ${sessionId} | ${session.customer_details?.email} | ${phone} | $${amount}`);
 
-    // Log payment details
-    console.log(`✅ Payment successful!`);
-    console.log(`   Session ID: ${sessionId}`);
-    console.log(`   Email: ${email}`);
-    console.log(`   Phone: ${customerPhone}`);
-    console.log(`   Amount: ${currency} $${amountTotal}`);
-    console.log(`   Payment Status: ${paymentStatus}`);
-
-    // Mark user as paid
-    if (customerPhone && customerPhone !== "N/A") {
-      paidUsers.add(customerPhone);
-      console.log(`   User marked as paid: ${customerPhone}`);
-      // send confirmation message and first premium joke via Twilio
-      const randomJoke = dadJokes[Math.floor(Math.random() * dadJokes.length)];
+    if (phone) {
+      paidUsers.add(phone);
       await twilioClient.messages.create({
         from: `rcs:${SENDER_NAME}`,
-        to: customerPhone,
-        body:
-          `🎉 Thank you for your purchase! You've unlocked PREMIUM DAD JOKES! 🎉\n\n` +
-          `Here's your first joke:\n\n${randomJoke}\n\n😂 Text me anytime for more!`,
+        to: phone,
+        body: `🎉 Thank you for your purchase! You've unlocked PREMIUM DAD JOKES! 🎉\n\n` +
+          `Here's your first joke:\n\n${getRandomJoke()}\n\n😂 Text me anytime for more!`,
       });
     }
 
-    // Redirect to RCS chat, optional as the user also receives their first joke via RCS
-    return Response.redirect(
-      `sms:${SENDER_NAME}@rbm.goog?body=I want my dad jokes!`,
-      302,
-    );
+    return Response.redirect(`sms:${SENDER_NAME}@rbm.goog?body=I want my dad jokes!`, 302);
   } catch (error) {
     console.error("Error retrieving session:", error);
-    return new Response("Error retrieving payment information", {
-      status: 500,
-    });
+    return new Response("Error retrieving payment information", { status: 500 });
   }
 }
 
-// Main server
 async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
-
-  // Route: Twilio messaging endpoint
-  if (url.pathname === "/messaging" && req.method === "POST") {
-    return handleTwilioMessage(req);
-  }
-
-  // Route: Success page after payment
-  if (url.pathname === "/success" && req.method === "GET") {
-    return handlePaymentSuccess(req, url);
-  }
-
-  // 404 for unknown routes
+  if (url.pathname === "/messaging" && req.method === "POST") return handleTwilioMessage(req);
+  if (url.pathname === "/success" && req.method === "GET") return handlePaymentSuccess(req, url);
   return new Response("Not Found", { status: 404 });
 }
 
