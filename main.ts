@@ -1,9 +1,6 @@
 import Stripe from "stripe";
 import twilio from "twilio";
 
-// In-memory storage for paid users (in production, use a database)
-const paidUsers = new Set<string>();
-
 // Configuration
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID") || "";
@@ -27,56 +24,19 @@ const stripe = new Stripe(STRIPE_SECRET_KEY, {
 // Initialize Twilio client
 const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
-// Dad jokes collection
-const dadJokes = [
-  "Why don't eggs tell jokes? They'd crack each other up! 🥚😂",
-  "I'm afraid for the calendar. Its days are numbered. 📅😱",
-  "What do you call a fake noodle? An impasta! 🍝😎",
-  "Why did the scarecrow win an award? He was outstanding in his field! 🌾🏆",
-  "I only know 25 letters of the alphabet. I don't know y. 🔤🤷",
-];
 
-// Dad joke paywall price
-const DAD_JOKE_PRICE = 299;
+// In-memory storage for paid users (in production, use a database)
+const paidUsers = new Set<string>();
 
 function getRandomJoke(): string {
+  const dadJokes = [
+    "Why don't eggs tell jokes? They'd crack each other up! 🥚😂",
+    "I'm afraid for the calendar. Its days are numbered. 📅😱",
+    "What do you call a fake noodle? An impasta! 🍝😎",
+    "Why did the scarecrow win an award? He was outstanding in his field! 🌾🏆",
+    "I only know 25 letters of the alphabet. I don't know y. 🔤🤷",
+  ];
   return dadJokes[Math.floor(Math.random() * dadJokes.length)];
-}
-
-async function sendPaymentLink(to: string, from: string): Promise<void> {
-  const url = await createCheckoutSession(to);
-  await twilioClient.messages.create({
-    contentSid: "HXa9f820df155dad36b03a757e97137e64",
-    contentVariables: JSON.stringify({ 1: url.replace("https://checkout.stripe.com/c/pay/", "") }),
-    from,
-    to,
-  });
-}
-async function createCheckoutSession(customerPhone: string): Promise<string> {
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ["card"],
-    line_items: [{
-      price_data: {
-        currency: "usd",
-        product_data: {
-          name: "Premium Dad Jokes - Lifetime Access",
-          description:
-            "Unlock unlimited access to the finest, corniest dad jokes known to mankind! 🤣",
-        },
-        unit_amount: DAD_JOKE_PRICE,
-      },
-      quantity: 1,
-    }],
-    mode: "payment",
-    success_url: `${BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${BASE_URL}/cancel`,
-    metadata: {
-      phone: customerPhone,
-    },
-    customer_creation: "always",
-  });
-
-  return session.url || "";
 }
 
 async function handleTwilioMessage(req: Request): Promise<Response> {
@@ -94,24 +54,72 @@ async function handleTwilioMessage(req: Request): Promise<Response> {
   } else if (["help", "hello", "start"].includes(body)) {
     twiml.message(
       `👋 Welcome to the ULTIMATE Dad Joke Generator! 🎉\n\n` +
-      `For just $${(DAD_JOKE_PRICE / 100).toFixed(2)}, you'll unlock LIFETIME access to the corniest, ` +
-      `most groan-worthy dad jokes on the planet! 🌎\n\n` +
-      `Why pay? Because FREE dad jokes are like free hugs from strangers... ` +
-      `slightly uncomfortable and probably not worth it. 😅\n\n` +
-      `Reply with ANY message to get started!`
+        `For just $${
+          (DAD_JOKE_PRICE / 100).toFixed(2)
+        }, you'll unlock LIFETIME access to the corniest, ` +
+        `most groan-worthy dad jokes on the planet! 🌎\n\n` +
+        `Why pay? Because FREE dad jokes are like free hugs from strangers... ` +
+        `slightly uncomfortable and probably not worth it. 😅\n\n` +
+        `Reply with ANY message to get started!`,
     );
   } else if (paidUsers.has(from)) {
-    twiml.message(`🎭 HERE'S YOUR PREMIUM DAD JOKE:\n\n${getRandomJoke()}\n\n😂 Want another? Just text me again!`);
+    twiml.message(
+      `🎭 HERE'S YOUR PREMIUM DAD JOKE:\n\n${getRandomJoke()}\n\n😂 Want another? Just text me again!`,
+    );
   } else {
     try {
       await sendPaymentLink(from, to);
     } catch (error) {
       console.error("Error creating checkout:", error);
-      twiml.message("🤖 Error: Even robots need to eat... I mean, process payments! Try again later.");
+      twiml.message(
+        "🤖 Error: Even robots need to eat... I mean, process payments! Try again later.",
+      );
     }
   }
 
-  return new Response(twiml.toString(), { headers: { "Content-Type": "text/xml" } });
+  return new Response(twiml.toString(), {
+    headers: { "Content-Type": "text/xml" },
+  });
+}
+
+
+
+async function sendPaymentLink(to: string, from: string): Promise<void> {
+  const url = await createCheckoutSession(to);
+  await twilioClient.messages.create({
+    contentSid: "HXa9f820df155dad36b03a757e97137e64",
+    contentVariables: JSON.stringify({
+      1: url.replace("https://checkout.stripe.com/c/pay/", ""),
+    }),
+    from,
+    to,
+  });
+}
+async function createCheckoutSession(customerPhone: string): Promise<string> {
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ["card"],
+    line_items: [{
+      price_data: {
+        currency: "usd",
+        product_data: {
+          name: "Premium Dad Jokes - Lifetime Access",
+          description:
+            "Unlock unlimited access to the finest, corniest dad jokes known to mankind! 🤣",
+        },
+        unit_amount: 299,
+      },
+      quantity: 1,
+    }],
+    mode: "payment",
+    success_url: `${BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${BASE_URL}/cancel`,
+    metadata: {
+      phone: customerPhone,
+    },
+    customer_creation: "always",
+  });
+
+  return session.url || "";
 }
 
 async function handlePaymentSuccess(req: Request, url: URL): Promise<Response> {
@@ -121,31 +129,45 @@ async function handlePaymentSuccess(req: Request, url: URL): Promise<Response> {
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     const phone = session.metadata?.phone;
-    const amount = session.amount_total ? (session.amount_total / 100).toFixed(2) : "0.00";
+    const amount = session.amount_total
+      ? (session.amount_total / 100).toFixed(2)
+      : "0.00";
 
-    console.log(`✅ Payment: ${sessionId} | ${session.customer_details?.email} | ${phone} | $${amount}`);
+    console.log(
+      `✅ Payment: ${sessionId} | ${session.customer_details?.email} | ${phone} | $${amount}`,
+    );
 
     if (phone) {
       paidUsers.add(phone);
       await twilioClient.messages.create({
         from: `rcs:${SENDER_NAME}`,
         to: phone,
-        body: `🎉 Thank you for your purchase! You've unlocked PREMIUM DAD JOKES! 🎉\n\n` +
+        body:
+          `🎉 Thank you for your purchase! You've unlocked PREMIUM DAD JOKES! 🎉\n\n` +
           `Here's your first joke:\n\n${getRandomJoke()}\n\n😂 Text me anytime for more!`,
       });
     }
 
-    return Response.redirect(`sms:${SENDER_NAME}@rbm.goog?body=I want my dad jokes!`, 302);
+    return Response.redirect(
+      `sms:${SENDER_NAME}@rbm.goog?body=I want my dad jokes!`,
+      302,
+    );
   } catch (error) {
     console.error("Error retrieving session:", error);
-    return new Response("Error retrieving payment information", { status: 500 });
+    return new Response("Error retrieving payment information", {
+      status: 500,
+    });
   }
 }
 
 async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  if (url.pathname === "/messaging" && req.method === "POST") return handleTwilioMessage(req);
-  if (url.pathname === "/success" && req.method === "GET") return handlePaymentSuccess(req, url);
+  if (url.pathname === "/messaging" && req.method === "POST") {
+    return handleTwilioMessage(req);
+  }
+  if (url.pathname === "/success" && req.method === "GET") {
+    return handlePaymentSuccess(req, url);
+  }
   return new Response("Not Found", { status: 404 });
 }
 
