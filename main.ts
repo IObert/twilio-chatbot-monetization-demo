@@ -54,9 +54,7 @@ async function handleTwilioMessage(req: Request): Promise<Response> {
   } else if (["help", "hello", "start"].includes(body)) {
     twiml.message(
       `👋 Welcome to the ULTIMATE Dad Joke Generator! 🎉\n\n` +
-        `For just $${
-          (DAD_JOKE_PRICE / 100).toFixed(2)
-        }, you'll unlock LIFETIME access to the corniest, ` +
+        `For just $2.99, you'll unlock LIFETIME access to the corniest, ` +
         `most groan-worthy dad jokes on the planet! 🌎\n\n` +
         `Why pay? Because FREE dad jokes are like free hugs from strangers... ` +
         `slightly uncomfortable and probably not worth it. 😅\n\n` +
