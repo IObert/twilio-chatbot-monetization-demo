@@ -5,7 +5,6 @@ import twilio from "twilio";
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID") || "";
 const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN") || "";
-const BASE_URL = Deno.env.get("BASE_URL") || `http://localhost:3000`;
 const SENDER_NAME = Deno.env.get("SENDER") || "";
 
 if (!STRIPE_SECRET_KEY) {
@@ -48,6 +47,7 @@ async function handleTwilioMessage(req: Request): Promise<Response> {
   console.log(`Received message from ${from}: ${body}`);
 
   const twiml = new twilio.twiml.MessagingResponse();
+  const baseUrl = `${new URL(req.url).protocol}//${new URL(req.url).host}`;
 
   if (body === "get more jokes") {
     // Button click, no action
@@ -66,7 +66,7 @@ async function handleTwilioMessage(req: Request): Promise<Response> {
     );
   } else {
     try {
-      await sendPaymentLink(from, to);
+      await sendPaymentLink(from, to, baseUrl);
     } catch (error) {
       console.error("Error creating checkout:", error);
       twiml.message(
@@ -82,8 +82,8 @@ async function handleTwilioMessage(req: Request): Promise<Response> {
 
 
 
-async function sendPaymentLink(to: string, from: string): Promise<void> {
-  const url = await createCheckoutSession(to);
+async function sendPaymentLink(to: string, from: string, baseUrl: string): Promise<void> {
+  const url = await createCheckoutSession(to, baseUrl);
   await twilioClient.messages.create({
     contentSid: "HXa9f820df155dad36b03a757e97137e64",
     contentVariables: JSON.stringify({
@@ -93,7 +93,8 @@ async function sendPaymentLink(to: string, from: string): Promise<void> {
     to,
   });
 }
-async function createCheckoutSession(customerPhone: string): Promise<string> {
+
+async function createCheckoutSession(customerPhone: string, baseUrl: string): Promise<string> {
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
     line_items: [{
@@ -109,8 +110,8 @@ async function createCheckoutSession(customerPhone: string): Promise<string> {
       quantity: 1,
     }],
     mode: "payment",
-    success_url: `${BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${BASE_URL}/cancel`,
+    success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${baseUrl}/cancel`,
     metadata: {
       phone: customerPhone,
     },

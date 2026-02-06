@@ -9,7 +9,6 @@ const paidUsers = new Set();
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
-const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 const SENDER_NAME = process.env.SENDER || "";
 
 if (!STRIPE_SECRET_KEY) {
@@ -40,8 +39,8 @@ function getRandomJoke() {
   return dadJokes[Math.floor(Math.random() * dadJokes.length)];
 }
 
-async function sendPaymentLink(to, from) {
-  const url = await createCheckoutSession(to);
+async function sendPaymentLink(to, from, baseUrl) {
+  const url = await createCheckoutSession(to, baseUrl);
   await twilioClient.messages.create({
     contentSid: "HXa9f820df155dad36b03a757e97137e64",
     contentVariables: JSON.stringify({ 1: url.replace("https://checkout.stripe.com/c/pay/", "") }),
@@ -50,7 +49,7 @@ async function sendPaymentLink(to, from) {
   });
 }
 
-async function createCheckoutSession(customerPhone) {
+async function createCheckoutSession(customerPhone, baseUrl) {
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
     line_items: [{
@@ -65,8 +64,8 @@ async function createCheckoutSession(customerPhone) {
       quantity: 1,
     }],
     mode: "payment",
-    success_url: `${BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${BASE_URL}/cancel`,
+    success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${baseUrl}/cancel`,
     metadata: { phone: customerPhone },
     customer_creation: "always",
   });
@@ -84,6 +83,7 @@ app.post("/messaging", async (req, res) => {
   console.log(`Received message from ${from}: ${body}`);
 
   const twiml = new twilio.twiml.MessagingResponse();
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
 
   if (body === "get more jokes") {
     // Button click, no action
@@ -100,7 +100,7 @@ app.post("/messaging", async (req, res) => {
     twiml.message(`🎭 HERE'S YOUR PREMIUM DAD JOKE:\n\n${getRandomJoke()}\n\n😂 Want another? Just text me again!`);
   } else {
     try {
-      await sendPaymentLink(from, to);
+      await sendPaymentLink(from, to, baseUrl);
     } catch (error) {
       console.error("Error creating checkout:", error);
       twiml.message("🤖 Error: Even robots need to eat... I mean, process payments! Try again later.");

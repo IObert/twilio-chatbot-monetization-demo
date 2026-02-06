@@ -36,7 +36,6 @@ STRIPE_SECRET_KEY=sk_test_...
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
 SENDER=your-rcs-sender-id
-BASE_URL=https://your-ngrok-url.ngrok.io
 ```
 
 ### 2. Run the Server
@@ -62,7 +61,7 @@ In a separate terminal:
 ngrok http 3000
 ```
 
-Update your `.env` with the ngrok URL, then configure the Twilio webhook to `https://your-url.ngrok.io/messaging`.
+Configure the Twilio webhook to point to `https://your-ngrok-url.ngrok.io/messaging`.
 
 ## How It Works
 
@@ -97,7 +96,6 @@ Update your `.env` with the ngrok URL, then configure the Twilio webhook to `htt
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID | `AC...` |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | `...` |
 | `SENDER` | RCS sender ID | `your-brand` |
-| `BASE_URL` | Public URL for webhooks | `https://xyz.ngrok.io` |
 
 ## Endpoints
 
