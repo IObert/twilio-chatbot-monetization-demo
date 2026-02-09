@@ -9,13 +9,13 @@ const paidUsers = new Set();
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
-const SENDER_NAME = process.env.SENDER || "";
+const SENDER = process.env.SENDER || "";
 
 if (!STRIPE_SECRET_KEY) {
   throw new Error("STRIPE_SECRET_KEY is not defined in environment variables.");
 }
 
-if (!SENDER_NAME) {
+if (!SENDER) {
   throw new Error("SENDER is not defined in environment variables.");
 }
 
@@ -124,14 +124,14 @@ app.get("/success", async (req, res) => {
     if (phone) {
       paidUsers.add(phone);
       await twilioClient.messages.create({
-        from: `rcs:${SENDER_NAME}`,
+        from: `rcs:${SENDER}`,
         to: phone,
         body: `🎉 Thank you for your purchase! You've unlocked PREMIUM DAD JOKES! 🎉\n\n` +
           `Here's your first joke:\n\n${getRandomJoke()}\n\n😂 Text me anytime for more!`,
       });
     }
 
-    res.redirect(`sms:${SENDER_NAME}@rbm.goog?body=I want my dad jokes!`);
+    res.redirect(`sms:${SENDER}@rbm.goog?body=I want my dad jokes!`);
   } catch (error) {
     console.error("Error retrieving session:", error);
     res.status(500).send("Error retrieving payment information");
